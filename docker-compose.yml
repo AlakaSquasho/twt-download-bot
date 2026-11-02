@@ -1,0 +1,25 @@
+services:
+  twt-download-bot:
+    build: .
+    image: twt-download-bot:latest
+    container_name: twt-download-bot
+    restart: unless-stopped
+    stop_grace_period: 20s
+    env_file:
+      - .env
+    environment:
+      STATE_DIR: /state
+      TZ: ${TZ:-Asia/Shanghai}
+    volumes:
+      - ./state:/state
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/bot", "-healthcheck"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
