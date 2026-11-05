@@ -207,7 +207,7 @@ func newTestApp(t *testing.T, tg *httptest.Server, fxURL string, mediaClient *ht
 			allow:    func(string) bool { return true },
 			sleep:    noSleep,
 		},
-		sources: newRegistry(newFxTwitter(fxURL, tg.Client())),
+		sources: newRegistry(newFxTwitter(fxURL, tg.Client(), "")),
 	}
 	return app, tmpDir
 }
@@ -381,5 +381,56 @@ func TestProcessRefSendsSinglePhoto(t *testing.T) {
 	}
 	if entries, _ := os.ReadDir(tmpDir); len(entries) != 0 {
 		t.Errorf("temp dir not cleaned: %v", entries)
+	}
+}
+
+func TestProcessRefSendsTranslatedText(t *testing.T) {
+	tgSrv, rec := fakeTelegram(t)
+
+	fxSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `{"code":200,"tweet":{"id":"11","url":"https://x.com/t/status/11","text":"hello","author":{"name":"T","screen_name":"t"},"translation":{"text":"你好","source_lang":"en","source_lang_en":"English","provider":"grok"}}}`)
+	}))
+	defer fxSrv.Close()
+
+	app, _ := newTestApp(t, tgSrv, fxSrv.URL, nil)
+	app.sources = newRegistry(newFxTwitter(fxSrv.URL, tgSrv.Client(), "zh-Hans"))
+	ref := app.sources.Extract("11")[0]
+	app.processRef(context.Background(), 42, 1, ref, 0, 1)
+
+	text := rec.lastText()
+	for _, want := range []string{"翻译自英语 by Grok", "你好", "<blockquote expandable>hello</blockquote>", "Source"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("edited text missing %q: %q", want, text)
+		}
+	}
+	if mode := rec.lastParseMode(); mode != "HTML" {
+		t.Errorf("parse mode = %q, want HTML", mode)
+	}
+}
+
+func TestProcessRefSendsTranslatedCaption(t *testing.T) {
+	tgSrv, rec := fakeTelegram(t)
+
+	fxSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `{"code":200,"tweet":{"id":"12","url":"https://x.com/t/status/12","text":"hello","author":{"name":"T","screen_name":"t"},"translation":{"text":"你好","source_lang":"en","source_lang_en":"English","provider":"grok"},"media":{"all":[{"type":"photo","url":"https://pbs.twimg.com/media/a.jpg"}]}}}`)
+	}))
+	defer fxSrv.Close()
+
+	app, _ := newTestApp(t, tgSrv, fxSrv.URL, nil)
+	app.sources = newRegistry(newFxTwitter(fxSrv.URL, tgSrv.Client(), "zh-Hans"))
+	ref := app.sources.Extract("12")[0]
+	app.processRef(context.Background(), 42, 1, ref, 0, 1)
+
+	if !rec.has("sendPhoto") {
+		t.Fatalf("sendPhoto not called; methods = %v", rec.methods)
+	}
+	if len(rec.captions) == 0 {
+		t.Fatal("caption missing")
+	}
+	caption := rec.captions[0]
+	for _, want := range []string{"翻译自英语 by Grok", "你好", "<blockquote expandable>hello</blockquote>", "Source"} {
+		if !strings.Contains(caption, want) {
+			t.Errorf("caption missing %q: %q", want, caption)
+		}
 	}
 }

@@ -100,7 +100,7 @@ func run(ctx context.Context, cfg config, log *slog.Logger) error {
 		mediaAPI:   &mediaAPI,
 		log:        log,
 		fetcher:    newMediaFetcher(newHTTPClient(checkMediaRedirect), cfg.tmpDir, cfg.maxUploadBytes),
-		sources:    newRegistry(newFxTwitter(cfg.fxtwitterBase, newHTTPClient(nil))),
+		sources:    newRegistry(newFxTwitter(cfg.fxtwitterBase, newHTTPClient(nil), cfg.translateLang)),
 		jobs:       make(chan job, jobQueueSize),
 		uploadSlot: uploadSlot,
 	}
@@ -114,6 +114,7 @@ func run(ctx context.Context, cfg config, log *slog.Logger) error {
 		"tmp_dir", cfg.tmpDir,
 		"allowed_users", len(cfg.allowedUsers),
 		"timing", cfg.timing.String(),
+		"translate_lang", cfg.translateLang,
 	)
 
 	go app.heartbeatLoop(ctx)

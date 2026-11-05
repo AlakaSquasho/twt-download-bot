@@ -51,6 +51,7 @@ docker compose logs -f
 用授权账号私聊 Bot：
 
 - 发送推文链接 → Bot 以 Reply 方式回一条状态消息，实时显示获取、下载、上传进度；有媒体时处理完删除状态消息，媒体以 Reply 发送，第一条媒体的 caption 是作者、正文与 Source
+- 非中文推文默认抓取 Grok 翻译：正文显示译文，开头标注「翻译自xx语 by Grok」，原文折叠在可展开的引用块中；拿不到译文时回退为原文格式
 - 直接发送推文 ID（纯数字）→ 同上
 - 纯文字推文 → 状态消息最终变为帖子内容
 - 一条消息包含多个链接 → 每条链接各自一条 Reply 状态消息
@@ -66,6 +67,7 @@ docker compose logs -f
 | `TMP_DIR` | 否 | `$STATE_DIR/tmp` | 下载临时目录 |
 | `MAX_UPLOAD_MB` | 否 | `50` | 单个媒体上限（MB），范围 1–50 |
 | `FXTWITTER_BASE` | 否 | `https://api.fxtwitter.com` | FxTwitter API 基址 |
+| `TRANSLATE_LANG` | 否 | `zh-Hans` | Grok 译文的目标语言，留空关闭翻译 |
 | `POLL_TIMEOUT_SECONDS` | 否 | `60` | 长轮询超时，范围 5–120 |
 | `LOG_LEVEL` | 否 | `info` | `debug` / `info` / `warn` / `error` |
 | `TIMING_TRACE` | 否 | `off` | `off` / `summary` / `verbose`，每条消息的分段耗时日志 |

@@ -37,11 +37,20 @@ type Media struct {
 	Filename string // 建议文件名，含扩展名
 }
 
+// Translation 是来源提供的译文（X 上为 Grok 自动翻译）。
+type Translation struct {
+	Text         string
+	SourceLang   string // 如 "en"
+	SourceLangEN string // 如 "English"
+	Provider     string // 如 "grok"
+}
+
 type Post struct {
 	CanonicalURL string
 	AuthorName   string
 	AuthorHandle string
-	Text         string
+	Text         string // 原文
+	Translation  *Translation
 	Media        []Media
 }
 

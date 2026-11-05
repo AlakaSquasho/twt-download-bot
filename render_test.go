@@ -130,6 +130,166 @@ func TestRenderPostCaptionEmojiBoundary(t *testing.T) {
 	}
 }
 
+func TestRenderPostHTMLTranslation(t *testing.T) {
+	post := &Post{
+		CanonicalURL: "https://x.com/u/status/1",
+		AuthorName:   "User",
+		AuthorHandle: "u",
+		Text:         "hello\nworld",
+		Translation: &Translation{
+			Text:         "你好\n世界",
+			SourceLang:   "en",
+			SourceLangEN: "English",
+			Provider:     "grok",
+		},
+	}
+	want := `<a href="https://x.com/u">User(@u)</a>:` + "\n\n" +
+		"翻译自英语 by Grok" + "\n\n" +
+		"你好\n世界" + "\n\n" +
+		"<blockquote expandable>hello\nworld</blockquote>" + "\n\n" +
+		`<a href="https://x.com/u/status/1">Source</a>`
+	if got := renderPostHTML(post, captionLimit); got != want {
+		t.Errorf("renderPostHTML =\n%q\nwant\n%q", got, want)
+	}
+}
+
+func TestRenderPostHTMLTranslationFallbacks(t *testing.T) {
+	base := Post{
+		CanonicalURL: "https://x.com/u/status/1",
+		AuthorName:   "User",
+		AuthorHandle: "u",
+		Text:         "hello",
+	}
+	want := renderPostHTML(&base, captionLimit)
+
+	for _, tr := range []*Translation{
+		{Text: "  "},
+		{Text: "hello"},
+	} {
+		post := base
+		post.Translation = tr
+		if got := renderPostHTML(&post, captionLimit); got != want {
+			t.Errorf("translation %+v should fall back, got %q", tr, got)
+		}
+	}
+}
+
+func TestRenderPostHTMLTranslationEscaping(t *testing.T) {
+	post := &Post{
+		CanonicalURL: "https://x.com/u/status/1",
+		AuthorName:   "User",
+		AuthorHandle: "u",
+		Text:         "<original &>",
+		Translation: &Translation{
+			Text:       "<translated &>",
+			SourceLang: "en",
+			Provider:   "grok",
+		},
+	}
+	got := renderPostHTML(post, captionLimit)
+	if !strings.Contains(got, "&lt;translated &amp;&gt;") {
+		t.Errorf("translation not escaped: %q", got)
+	}
+	if !strings.Contains(got, "<blockquote expandable>&lt;original &amp;&gt;</blockquote>") {
+		t.Errorf("original not escaped or not folded: %q", got)
+	}
+}
+
+func TestRenderPostCaptionTranslationTruncatesOriginal(t *testing.T) {
+	post := &Post{
+		CanonicalURL: "https://x.com/u/status/1",
+		AuthorName:   "User",
+		AuthorHandle: "u",
+		Text:         strings.Repeat("original ", 500),
+		Translation: &Translation{
+			Text:       "译文",
+			SourceLang: "en",
+			Provider:   "grok",
+		},
+	}
+	visible := visibleHTMLText(renderPostCaption(post))
+	if n := utf16Len(visible); n > captionLimit {
+		t.Errorf("visible length = %d, want <= %d", n, captionLimit)
+	}
+	if !strings.Contains(visible, "译文") || !strings.Contains(visible, "翻译自英语 by Grok") {
+		t.Errorf("translation missing: %q", visible)
+	}
+	if !strings.Contains(visible, "original") {
+		t.Errorf("original should still be present (truncated): %q", visible)
+	}
+	if !strings.HasSuffix(strings.TrimRight(visible, "\n"), "Source") {
+		t.Errorf("Source should be the last block: %q", visible)
+	}
+}
+
+func TestRenderPostCaptionTranslationTruncatesTranslation(t *testing.T) {
+	post := &Post{
+		CanonicalURL: "https://x.com/u/status/1",
+		AuthorName:   "User",
+		AuthorHandle: "u",
+		Text:         "hello",
+		Translation: &Translation{
+			Text:       strings.Repeat("译", 5000),
+			SourceLang: "en",
+			Provider:   "grok",
+		},
+	}
+	got := renderPostCaption(post)
+	visible := visibleHTMLText(got)
+	if n := utf16Len(visible); n > captionLimit {
+		t.Errorf("visible length = %d, want <= %d", n, captionLimit)
+	}
+	if strings.Contains(got, "<blockquote") {
+		t.Errorf("oversize translation must omit the original blockquote: %q", got)
+	}
+	if !strings.Contains(visible, "…") {
+		t.Errorf("translation should be truncated: %q", visible)
+	}
+}
+
+func TestRenderPostHTMLTranslationTinyOriginalBudget(t *testing.T) {
+	post := &Post{
+		CanonicalURL: "https://x.com/u/status/1",
+		AuthorName:   "User",
+		AuthorHandle: "u",
+		Text:         "hello",
+		Translation: &Translation{
+			Text:       strings.Repeat("译", 30),
+			SourceLang: "en",
+			Provider:   "grok",
+		},
+	}
+	got := renderPostHTML(post, 80)
+	if strings.Contains(got, "<blockquote") {
+		t.Errorf("too little room for the original; blockquote should be omitted: %q", got)
+	}
+	if n := utf16Len(visibleHTMLText(got)); n > 80 {
+		t.Errorf("visible length = %d, want <= 80", n)
+	}
+}
+
+func TestFormatTranslationLabel(t *testing.T) {
+	tests := []struct {
+		sourceLang   string
+		sourceLangEN string
+		provider     string
+		want         string
+	}{
+		{"en", "English", "grok", "翻译自英语 by Grok"},
+		{"pt-BR", "Portuguese", "grok", "翻译自葡萄牙语 by Grok"},
+		{"ja", "Japanese", "", "翻译自日语 by Grok"},
+		{"xx", "Klingon", "grok", "翻译自Klingon by Grok"},
+		{"", "", "", "翻译自原文 by Grok"},
+	}
+	for _, tt := range tests {
+		tr := &Translation{SourceLang: tt.sourceLang, SourceLangEN: tt.sourceLangEN, Provider: tt.provider}
+		if got := formatTranslationLabel(tr); got != tt.want {
+			t.Errorf("formatTranslationLabel(%q, %q, %q) = %q, want %q",
+				tt.sourceLang, tt.sourceLangEN, tt.provider, got, tt.want)
+		}
+	}
+}
+
 func TestTruncateUTF16(t *testing.T) {
 	tests := []struct {
 		in   string

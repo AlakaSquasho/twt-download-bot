@@ -204,7 +204,7 @@ func TestFetchRecordsEveryRetry(t *testing.T) {
 
 	tr := newTrace(testLogger(&bytes.Buffer{}), "1:1", time.Now().Unix(), time.Now(), timingSummary)
 	ctx := withTrace(context.Background(), tr)
-	src := newFxTwitter(srv.URL, srv.Client())
+	src := newFxTwitter(srv.URL, srv.Client(), "")
 	src.sleep = noSleep
 
 	if _, err := src.Fetch(ctx, src.ref("9")); err == nil {

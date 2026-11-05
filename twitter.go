@@ -28,16 +28,18 @@ var (
 
 // fxTwitter 通过 FxTwitter 公开 API 抓取推文，无需登录。
 type fxTwitter struct {
-	base   string
-	client *http.Client
-	sleep  func(context.Context, time.Duration) error
+	base          string
+	client        *http.Client
+	translateLang string
+	sleep         func(context.Context, time.Duration) error
 }
 
-func newFxTwitter(base string, client *http.Client) *fxTwitter {
+func newFxTwitter(base string, client *http.Client, translateLang string) *fxTwitter {
 	return &fxTwitter{
-		base:   strings.TrimRight(base, "/"),
-		client: client,
-		sleep:  sleepCtx,
+		base:          strings.TrimRight(base, "/"),
+		client:        client,
+		translateLang: translateLang,
+		sleep:         sleepCtx,
 	}
 }
 
@@ -105,11 +107,19 @@ type fxResponse struct {
 	Tweet   *fxTweet `json:"tweet"`
 }
 
+type fxTranslation struct {
+	Text         string `json:"text"`
+	SourceLang   string `json:"source_lang"`
+	SourceLangEN string `json:"source_lang_en"`
+	Provider     string `json:"provider"`
+}
+
 type fxTweet struct {
-	ID     string `json:"id"`
-	URL    string `json:"url"`
-	Text   string `json:"text"`
-	Author struct {
+	ID          string         `json:"id"`
+	URL         string         `json:"url"`
+	Text        string         `json:"text"`
+	Translation *fxTranslation `json:"translation"`
+	Author      struct {
 		Name       string `json:"name"`
 		ScreenName string `json:"screen_name"`
 	} `json:"author"`
@@ -125,11 +135,24 @@ type fxTweet struct {
 }
 
 func (s *fxTwitter) fetchOnce(ctx context.Context, ref Ref) (*Post, error) {
+	post, err := s.fetchOnceLang(ctx, ref, s.translateLang)
+	if err != nil && s.translateLang != "" && errors.Is(err, ErrPostUnavailable) {
+		// 自建 FxTwitter 实例可能不支持带语言码的路径，退回原路径以保持原有行为。
+		return s.fetchOnceLang(ctx, ref, "")
+	}
+	return post, err
+}
+
+func (s *fxTwitter) fetchOnceLang(ctx context.Context, ref Ref, lang string) (*Post, error) {
 	ctx, cancel := context.WithTimeout(ctx, fetchTimeout)
 	defer cancel()
 	at := attemptFrom(ctx)
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, s.base+"/status/"+url.PathEscape(ref.Arg), nil)
+	endpoint := s.base + "/status/" + url.PathEscape(ref.Arg)
+	if lang != "" {
+		endpoint += "/" + url.PathEscape(lang)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, fmt.Errorf("build request for tweet %s: %w", ref.Key, err)
 	}
@@ -226,11 +249,25 @@ func parseFxPost(tweet *fxTweet, ref Ref) *Post {
 	if handle == "" {
 		handle = handleFromTweetURL(tweet.URL)
 	}
+	var translation *Translation
+	if tr := tweet.Translation; tr != nil {
+		text := strings.TrimSpace(tr.Text)
+		// 无效语言码会让 FxTwitter 原样返回原文，等同于没有译文。
+		if text != "" && text != strings.TrimSpace(tweet.Text) {
+			translation = &Translation{
+				Text:         text,
+				SourceLang:   tr.SourceLang,
+				SourceLangEN: tr.SourceLangEN,
+				Provider:     tr.Provider,
+			}
+		}
+	}
 	return &Post{
 		CanonicalURL: canonical,
 		AuthorName:   tweet.Author.Name,
 		AuthorHandle: handle,
 		Text:         tweet.Text,
+		Translation:  translation,
 		Media:        media,
 	}
 }

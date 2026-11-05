@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"syscall"
@@ -22,6 +23,7 @@ type config struct {
 	tmpDir         string
 	maxUploadBytes int64
 	fxtwitterBase  string
+	translateLang  string
 	pollTimeout    time.Duration
 	timing         timingMode
 }
@@ -31,6 +33,8 @@ const (
 	offsetFile    = "last_update_id"
 	staleTempAge  = 24 * time.Hour
 )
+
+var translateLangRe = regexp.MustCompile(`^[A-Za-z]{2,3}(-[A-Za-z]{2,4})?$`)
 
 func main() {
 	health := flag.Bool("healthcheck", false, "check bot heartbeat and exit")
@@ -109,6 +113,15 @@ func loadConfig() (config, error) {
 	cfg.maxUploadBytes = maxMB << 20
 
 	cfg.fxtwitterBase = strings.TrimRight(envOr("FXTWITTER_BASE", "https://api.fxtwitter.com"), "/")
+
+	if v, ok := os.LookupEnv("TRANSLATE_LANG"); ok {
+		cfg.translateLang = strings.TrimSpace(v) // 显式留空则关闭翻译
+	} else {
+		cfg.translateLang = "zh-Hans"
+	}
+	if cfg.translateLang != "" && !translateLangRe.MatchString(cfg.translateLang) {
+		return cfg, fmt.Errorf("invalid TRANSLATE_LANG %q", cfg.translateLang)
+	}
 
 	pollSeconds, err := strconv.Atoi(envOr("POLL_TIMEOUT_SECONDS", "60"))
 	if err != nil || pollSeconds < 5 || pollSeconds > 120 {

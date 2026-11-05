@@ -14,7 +14,7 @@ import (
 func noSleep(context.Context, time.Duration) error { return nil }
 
 func TestFindRefs(t *testing.T) {
-	src := newFxTwitter("https://api.fxtwitter.com", nil)
+	src := newFxTwitter("https://api.fxtwitter.com", nil, "")
 
 	tests := []struct {
 		name string
@@ -46,7 +46,7 @@ func TestFindRefs(t *testing.T) {
 }
 
 func TestRegistryExtractDedupes(t *testing.T) {
-	r := newRegistry(newFxTwitter("https://api.fxtwitter.com", nil))
+	r := newRegistry(newFxTwitter("https://api.fxtwitter.com", nil, ""))
 	refs := r.Extract("https://x.com/a/status/1 https://twitter.com/b/status/1 https://x.com/c/status/2")
 	if len(refs) != 2 {
 		t.Fatalf("got %d refs, want 2: %+v", len(refs), refs)
@@ -156,7 +156,7 @@ func TestFetchSuccess(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	src := newFxTwitter(srv.URL, srv.Client())
+	src := newFxTwitter(srv.URL, srv.Client(), "")
 	src.sleep = noSleep
 	post, err := src.Fetch(context.Background(), src.ref("123"))
 	if err != nil {
@@ -170,6 +170,80 @@ func TestFetchSuccess(t *testing.T) {
 	}
 	if !strings.Contains(post.Media[0].URL, "name=orig") {
 		t.Errorf("photo URL missing name=orig: %s", post.Media[0].URL)
+	}
+}
+
+func TestFetchTranslation(t *testing.T) {
+	var paths []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+		_, _ = w.Write([]byte(`{"code":200,"tweet":{"id":"123","url":"https://x.com/u/status/123","text":"hello","author":{"screen_name":"u"},"translation":{"text":"你好","source_lang":"en","source_lang_en":"English","provider":"grok"}}}`))
+	}))
+	defer srv.Close()
+
+	src := newFxTwitter(srv.URL, srv.Client(), "zh-Hans")
+	src.sleep = noSleep
+	post, err := src.Fetch(context.Background(), src.ref("123"))
+	if err != nil {
+		t.Fatalf("Fetch: %v", err)
+	}
+	if len(paths) != 1 || paths[0] != "/status/123/zh-Hans" {
+		t.Errorf("paths = %v, want [/status/123/zh-Hans]", paths)
+	}
+	if post.Text != "hello" {
+		t.Errorf("text = %q, want original", post.Text)
+	}
+	tr := post.Translation
+	if tr == nil {
+		t.Fatal("translation missing")
+	}
+	if tr.Text != "你好" || tr.SourceLang != "en" || tr.SourceLangEN != "English" || tr.Provider != "grok" {
+		t.Errorf("translation = %+v", tr)
+	}
+}
+
+func TestFetchTranslationUnsupportedFallsBack(t *testing.T) {
+	var calls int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&calls, 1)
+		if strings.HasSuffix(r.URL.Path, "/zh-Hans") {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		_, _ = w.Write([]byte(`{"code":200,"tweet":{"id":"123","url":"https://x.com/u/status/123","text":"hello","author":{"screen_name":"u"}}}`))
+	}))
+	defer srv.Close()
+
+	src := newFxTwitter(srv.URL, srv.Client(), "zh-Hans")
+	src.sleep = noSleep
+	post, err := src.Fetch(context.Background(), src.ref("123"))
+	if err != nil {
+		t.Fatalf("Fetch: %v", err)
+	}
+	if got := atomic.LoadInt32(&calls); got != 2 {
+		t.Errorf("calls = %d, want 2 (language path + plain fallback)", got)
+	}
+	if post.Text != "hello" || post.Translation != nil {
+		t.Errorf("post = %+v, want plain original", post)
+	}
+}
+
+func TestParseFxPostTranslationFilters(t *testing.T) {
+	tests := []struct {
+		name string
+		tr   *fxTranslation
+	}{
+		{"empty", &fxTranslation{Text: "  ", SourceLang: "en"}},
+		{"same as original", &fxTranslation{Text: "hello", SourceLang: "en"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tweet := &fxTweet{ID: "1", Text: "hello", Translation: tt.tr}
+			post := parseFxPost(tweet, Ref{Key: "1", Stem: "1", Arg: "1"})
+			if post.Translation != nil {
+				t.Errorf("translation = %+v, want nil", post.Translation)
+			}
+		})
 	}
 }
 
@@ -196,7 +270,7 @@ func TestFetchClassification(t *testing.T) {
 			}))
 			defer srv.Close()
 
-			src := newFxTwitter(srv.URL, srv.Client())
+			src := newFxTwitter(srv.URL, srv.Client(), "")
 			src.sleep = noSleep
 			_, err := src.Fetch(context.Background(), src.ref("1"))
 			if err == nil {
