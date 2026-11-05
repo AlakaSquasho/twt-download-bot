@@ -44,6 +44,16 @@ docker compose up -d --build
 docker compose logs -f
 ```
 
+或使用 CI 构建的镜像部署（无需本地构建）：
+
+```bash
+docker compose -f docker-compose.prod.yml pull
+docker compose -f docker-compose.prod.yml up -d
+docker compose -f docker-compose.prod.yml logs -f
+```
+
+GHCR 镜像包默认私有；若未在仓库 Packages 页面将其改为 Public，需先执行 `docker login ghcr.io`（PAT 需 `read:packages` 权限）。
+
 看到 `bot started` 和 `polling started` 即启动成功。
 
 ### 5. 使用
@@ -141,6 +151,7 @@ download.go    流式下载、大小限制、重试、临时文件
 media.go       Telegram 上传、媒体组、照片降级、URL 发送、429 重试
 Dockerfile     多阶段构建
 docker-compose.yml
+docker-compose.prod.yml  使用 GHCR 镜像部署
 ```
 
 ## 本地开发
