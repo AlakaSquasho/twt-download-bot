@@ -2,7 +2,6 @@ package main
 
 import (
 	"strings"
-	"unicode"
 )
 
 const (
@@ -10,6 +9,10 @@ const (
 	messageTextLimit = 4000 // 普通消息留出余量，低于 Telegram 的 4096
 
 	minOriginalTextLimit = 16 // 译文之后剩余空间太小时不再输出原文折叠块
+
+	// 标注行前的自定义 emoji；不可用时客户端显示其后的普通 emoji。
+	translationEmojiID = "5454065032298009119"
+	translationEmoji   = "🌐"
 )
 
 var (
@@ -75,20 +78,20 @@ func renderPlainPost(authorLine, sourceLine, authorVisible, body string, visible
 
 // renderTranslatedPost 以译文为正文，原文放进可折叠引用；超长时优先截断原文。
 func renderTranslatedPost(post *Post, authorLine, sourceLine, authorVisible, translated, original string, visibleLimit int) string {
-	label := formatTranslationLabel(post.Translation)
+	label := translationLabelHTML(post.Translation)
 
 	// 作者行、冒号、标注行与 Source 的可见长度；每处空行占 2 个字符。
-	base := utf16Len(authorVisible) + 1 + utf16Len(label) + utf16Len("Source")
+	base := utf16Len(authorVisible) + 1 + translationLabelVisibleLen(post.Translation) + utf16Len("Source")
 	transBudget := visibleLimit - base - 6 // 三处空行：作者行 / 标注 / 译文 / Source
 	if transBudget <= 1 {
 		return renderPlainPost(authorLine, sourceLine, authorVisible, original, visibleLimit)
 	}
 
-	translatedOnly := authorLine + "\n\n" + escapeHTMLText(label) + "\n\n" +
+	translatedOnly := authorLine + "\n\n" + label + "\n\n" +
 		escapeHTMLText(translated) + "\n\n" + sourceLine
 	if utf16Len(translated) > transBudget {
 		translated = truncateUTF16(translated, transBudget-1) + "…"
-		return authorLine + "\n\n" + escapeHTMLText(label) + "\n\n" +
+		return authorLine + "\n\n" + label + "\n\n" +
 			escapeHTMLText(translated) + "\n\n" + sourceLine
 	}
 
@@ -100,7 +103,7 @@ func renderTranslatedPost(post *Post, authorLine, sourceLine, authorVisible, tra
 	if utf16Len(original) > remaining {
 		original = truncateUTF16(original, remaining-1) + "…"
 	}
-	return authorLine + "\n\n" + escapeHTMLText(label) + "\n\n" +
+	return authorLine + "\n\n" + label + "\n\n" +
 		escapeHTMLText(translated) + "\n\n" +
 		"<blockquote expandable>" + escapeHTMLText(original) + "</blockquote>\n\n" + sourceLine
 }
@@ -127,16 +130,19 @@ var languageNamesZH = map[string]string{
 	"uk": "乌克兰语",
 }
 
+// formatTranslationLabel 返回标注行的纯文本部分（不含 emoji 与 markup）。
 func formatTranslationLabel(tr *Translation) string {
-	provider := strings.TrimSpace(tr.Provider)
-	if provider == "" {
-		provider = "Grok"
-	} else {
-		runes := []rune(provider)
-		runes[0] = unicode.ToUpper(runes[0])
-		provider = string(runes)
-	}
-	return "翻译自" + languageNameZH(tr.SourceLang, tr.SourceLangEN) + " by " + provider
+	return "翻译自" + languageNameZH(tr.SourceLang, tr.SourceLangEN)
+}
+
+func translationLabelHTML(tr *Translation) string {
+	return `<tg-emoji emoji-id="` + translationEmojiID + `">` + translationEmoji + `</tg-emoji> ` +
+		`<i>` + escapeHTMLText(formatTranslationLabel(tr)) + `</i>`
+}
+
+// translationLabelVisibleLen 按 Telegram 的可见长度计算标注行：emoji + 空格 + 文本。
+func translationLabelVisibleLen(tr *Translation) int {
+	return utf16Len(translationEmoji) + 1 + utf16Len(formatTranslationLabel(tr))
 }
 
 func languageNameZH(sourceLang, sourceLangEN string) string {

@@ -144,7 +144,7 @@ func TestRenderPostHTMLTranslation(t *testing.T) {
 		},
 	}
 	want := `<a href="https://x.com/u">User(@u)</a>:` + "\n\n" +
-		"翻译自英语 by Grok" + "\n\n" +
+		`<tg-emoji emoji-id="5454065032298009119">🌐</tg-emoji> <i>翻译自英语</i>` + "\n\n" +
 		"你好\n世界" + "\n\n" +
 		"<blockquote expandable>hello\nworld</blockquote>" + "\n\n" +
 		`<a href="https://x.com/u/status/1">Source</a>`
@@ -211,7 +211,7 @@ func TestRenderPostCaptionTranslationTruncatesOriginal(t *testing.T) {
 	if n := utf16Len(visible); n > captionLimit {
 		t.Errorf("visible length = %d, want <= %d", n, captionLimit)
 	}
-	if !strings.Contains(visible, "译文") || !strings.Contains(visible, "翻译自英语 by Grok") {
+	if !strings.Contains(visible, "译文") || !strings.Contains(visible, "翻译自英语") {
 		t.Errorf("translation missing: %q", visible)
 	}
 	if !strings.Contains(visible, "original") {
@@ -259,12 +259,12 @@ func TestRenderPostHTMLTranslationTinyOriginalBudget(t *testing.T) {
 			Provider:   "grok",
 		},
 	}
-	got := renderPostHTML(post, 80)
+	got := renderPostHTML(post, 75)
 	if strings.Contains(got, "<blockquote") {
 		t.Errorf("too little room for the original; blockquote should be omitted: %q", got)
 	}
-	if n := utf16Len(visibleHTMLText(got)); n > 80 {
-		t.Errorf("visible length = %d, want <= 80", n)
+	if n := utf16Len(visibleHTMLText(got)); n > 75 {
+		t.Errorf("visible length = %d, want <= 75", n)
 	}
 }
 
@@ -275,11 +275,11 @@ func TestFormatTranslationLabel(t *testing.T) {
 		provider     string
 		want         string
 	}{
-		{"en", "English", "grok", "翻译自英语 by Grok"},
-		{"pt-BR", "Portuguese", "grok", "翻译自葡萄牙语 by Grok"},
-		{"ja", "Japanese", "", "翻译自日语 by Grok"},
-		{"xx", "Klingon", "grok", "翻译自Klingon by Grok"},
-		{"", "", "", "翻译自原文 by Grok"},
+		{"en", "English", "grok", "翻译自英语"},
+		{"pt-BR", "Portuguese", "grok", "翻译自葡萄牙语"},
+		{"ja", "Japanese", "", "翻译自日语"},
+		{"xx", "Klingon", "grok", "翻译自Klingon"},
+		{"", "", "", "翻译自原文"},
 	}
 	for _, tt := range tests {
 		tr := &Translation{SourceLang: tt.sourceLang, SourceLangEN: tt.sourceLangEN, Provider: tt.provider}
@@ -287,6 +287,17 @@ func TestFormatTranslationLabel(t *testing.T) {
 			t.Errorf("formatTranslationLabel(%q, %q, %q) = %q, want %q",
 				tt.sourceLang, tt.sourceLangEN, tt.provider, got, tt.want)
 		}
+	}
+}
+
+func TestTranslationLabelHTML(t *testing.T) {
+	tr := &Translation{SourceLang: "en", SourceLangEN: "English", Provider: "grok"}
+	want := `<tg-emoji emoji-id="5454065032298009119">🌐</tg-emoji> <i>翻译自英语</i>`
+	if got := translationLabelHTML(tr); got != want {
+		t.Errorf("translationLabelHTML = %q, want %q", got, want)
+	}
+	if got, want := translationLabelVisibleLen(tr), 8; got != want {
+		t.Errorf("translationLabelVisibleLen = %d, want %d", got, want)
 	}
 }
 

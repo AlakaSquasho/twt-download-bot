@@ -398,7 +398,7 @@ func TestProcessRefSendsTranslatedText(t *testing.T) {
 	app.processRef(context.Background(), 42, 1, ref, 0, 1)
 
 	text := rec.lastText()
-	for _, want := range []string{"翻译自英语 by Grok", "你好", "<blockquote expandable>hello</blockquote>", "Source"} {
+	for _, want := range []string{"翻译自英语", "你好", "<blockquote expandable>hello</blockquote>", "Source"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("edited text missing %q: %q", want, text)
 		}
@@ -428,7 +428,7 @@ func TestProcessRefSendsTranslatedCaption(t *testing.T) {
 		t.Fatal("caption missing")
 	}
 	caption := rec.captions[0]
-	for _, want := range []string{"翻译自英语 by Grok", "你好", "<blockquote expandable>hello</blockquote>", "Source"} {
+	for _, want := range []string{"翻译自英语", "你好", "<blockquote expandable>hello</blockquote>", "Source"} {
 		if !strings.Contains(caption, want) {
 			t.Errorf("caption missing %q: %q", want, caption)
 		}
